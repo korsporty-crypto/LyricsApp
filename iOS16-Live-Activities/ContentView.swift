@@ -1,19 +1,19 @@
 import SwiftUI
-import ActivityKit
 import AuthenticationServices
 import CommonCrypto
 
-struct LyricLine: Equatable {
+struct LyricLine: Equatable, Identifiable {
+    let id = UUID()
     let time: TimeInterval
     let text: String
 }
 
 struct ContentView: View {
-    @State private var currentActivity: Activity<LyricsAttributes>? = nil
     @State private var accessToken: String = ""
     @State private var currentSong = "재생 중인 음악 없음"
-    @State private var currentArtist = "Spotify 연동을 기다리는 중..."
+    @State private var currentArtist = "Spotify 연동을 대기 중입니다"
     @State private var syncedLyrics: [LyricLine] = []
+    @State private var currentSeconds: TimeInterval = 0
     @State private var syncTimer: Timer?
     @State private var codeVerifier: String = ""
     
@@ -22,15 +22,17 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            // 스포티파이 스타일의 다크 배경 그라데이션
+            LinearGradient(colors: [Color.black, Color(#colorLiteral(red: 0.08, green: 0.08, blue: 0.1, alpha: 1))], startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea()
             
-            VStack(spacing: 24) {
-                // 상단 네비게이션 헤더
+            VStack(spacing: 20) {
+                // 상단 헤더
                 HStack {
-                    Image(systemName: "music.mic")
+                    Image(systemName: "music.note.list")
                         .font(.title3)
-                        .foregroundColor(.yellow)
-                    Text("Live Lyric")
+                        .foregroundColor(.green)
+                    Text("Spotify Live Lyrics")
                         .font(.headline)
                         .bold()
                         .foregroundColor(.white)
@@ -39,9 +41,9 @@ struct ContentView: View {
                     HStack(spacing: 6) {
                         Circle()
                             .fill(accessToken.isEmpty ? Color.gray : Color.green)
-                            .frame(width: 6, height: 6)
-                        Text(accessToken.isEmpty ? "OFF" : "LIVE")
-                            .font(.system(size: 11, weight: .bold))
+                            .frame(width: 8, height: 8)
+                        Text(accessToken.isEmpty ? "DISCONNECTED" : "CONNECTED")
+                            .font(.system(size: 10, weight: .bold))
                             .foregroundColor(accessToken.isEmpty ? .gray : .green)
                     }
                     .padding(.horizontal, 10)
@@ -52,48 +54,84 @@ struct ContentView: View {
                 .padding(.horizontal, 24)
                 .padding(.top, 10)
                 
-                Spacer()
-                
-                // 메인 플레이어 카드
-                VStack(spacing: 16) {
-                    ZStack {
-                        Circle()
-                            .fill(LinearGradient(colors: [.yellow.opacity(0.3), .orange.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .frame(width: 90, height: 90)
-                        Image(systemName: "waveform")
-                            .font(.system(size: 36))
-                            .foregroundColor(.yellow)
-                    }
-                    .padding(.top, 10)
+                // 현재 재생 정보 카드
+                VStack(spacing: 8) {
+                    Text(currentSong)
+                        .font(.title3)
+                        .bold()
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                        .multilineTextAlignment(.center)
                     
-                    VStack(spacing: 6) {
-                        Text(currentSong)
-                            .font(.title2)
-                            .bold()
-                            .foregroundColor(.white)
-                            .multilineTextAlignment(.center)
-                            .lineLimit(1)
-                        
-                        Text(currentArtist)
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                            .lineLimit(1)
-                            .multilineTextAlignment(.center)
-                    }
+                    Text(currentArtist)
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                        .lineLimit(1)
+                        .multilineTextAlignment(.center)
                 }
-                .padding(24)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 16)
                 .frame(maxWidth: .infinity)
-                .background(Color(.systemGray6).opacity(0.08))
-                .cornerRadius(24)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 24)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                )
+                .background(Color.white.opacity(0.05))
+                .cornerRadius(16)
                 .padding(.horizontal, 20)
                 
-                Spacer()
+                // 실시간 스크롤 가사 뷰어 영역
+                ZStack {
+                    RoundedRectangle(cornerRadius: 24)
+                        .fill(Color.white.opacity(0.03))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 24)
+                                .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                        )
+                    
+                    if syncedLyrics.isEmpty {
+                        VStack(spacing: 12) {
+                            Image(systemName: "text.bubble")
+                                .font(.system(size: 40))
+                                .foregroundColor(.gray.opacity(0.5))
+                            Text("동기화된 가사가 없습니다.\n음악을 재생하고 아래 버튼을 눌러주세요.")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                                .multilineTextAlignment(.center)
+                        }
+                        .padding()
+                    } else {
+                        ScrollViewReader { proxy in
+                            ScrollView(showsIndicators: false) {
+                                VStack(spacing: 20) {
+                                    Spacer(minLength: 120)
+                                    
+                                    ForEach(syncedLyrics) { line in
+                                        let isActive = isLineActive(line: line)
+                                        Text(line.text)
+                                            .font(isActive ? .title2 : .body)
+                                            .bold(isActive)
+                                            .foregroundColor(isActive ? .green : .gray.opacity(0.6))
+                                            .multilineTextAlignment(.center)
+                                            .scaleEffect(isActive ? 1.05 : 1.0)
+                                            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isActive)
+                                            .id(line.id)
+                                            .padding(.horizontal, 20)
+                                    }
+                                    
+                                    Spacer(minLength: 120)
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+                            .onChange(of: currentSeconds) { _ in
+                                if let activeLine = syncedLyrics.last(where: { $0.time <= currentSeconds }) {
+                                    withAnimation {
+                                        proxy.scrollTo(activeLine.id, anchor: .center)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
                 
-                // 하단 인터랙티브 버튼 영역
+                // 하단 조작 버튼 영역
                 VStack(spacing: 12) {
                     if accessToken.isEmpty {
                         Button(action: loginWithSpotifyPKCE) {
@@ -105,31 +143,31 @@ struct ContentView: View {
                             .foregroundColor(.black)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
-                            .background(Color.yellow)
+                            .background(Color.green)
                             .cornerRadius(16)
                         }
                     } else {
                         Button(action: startRealtimeSync) {
                             HStack(spacing: 8) {
-                                Image(systemName: "play.circle.fill")
-                                Text("잠금화면 가사 위젯 띄우기")
+                                Image(systemName: "play.fill")
+                                Text("실시간 가사 싱크 시작")
                             }
                             .font(.headline)
                             .foregroundColor(.black)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
-                            .background(Color.yellow)
+                            .background(Color.green)
                             .cornerRadius(16)
                         }
                     }
                     
-                    Button(action: stopActivity) {
-                        Text("위젯 종료하기")
+                    Button(action: stopSync) {
+                        Text("동기화 중지")
                             .font(.subheadline)
                             .bold()
                             .foregroundColor(.red)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
+                            .padding(.vertical, 12)
                             .background(Color.red.opacity(0.1))
                             .cornerRadius(16)
                     }
@@ -140,7 +178,14 @@ struct ContentView: View {
         }
     }
     
-    // --- Spotify PKCE 보안 인증 로직 ---
+    // 현재 재생 중인 가사 줄 판별
+    func isLineActive(line: LyricLine) -> Bool {
+        guard let currentIndex = syncedLyrics.firstIndex(of: line) else { return false }
+        let nextTime = (currentIndex + 1 < syncedLyrics.count) ? syncedLyrics[currentIndex + 1].time : Double.infinity
+        return currentSeconds >= line.time && currentSeconds < nextTime
+    }
+    
+    // --- Spotify PKCE 인증 로직 ---
     func generateRandomString(length: Int) -> String {
         let letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
         return String((0..<length).map{ _ in letters.randomElement()! })
@@ -215,17 +260,17 @@ struct ContentView: View {
                let token = json["access_token"] as? String {
                 DispatchQueue.main.async {
                     self.accessToken = token
-                    self.currentSong = "연동 성공!"
+                    self.currentSong = "연동 완료!"
                     self.currentArtist = "스포티파이에서 음악을 재생하세요"
                 }
             }
         }.resume()
     }
     
-    // --- 실시간 가사 싱크 및 위젯 구동 로직 ---
+    // --- 실시간 가사 싱크 및 플레이어 로직 ---
     func startRealtimeSync() {
         syncTimer?.invalidate()
-        self.currentArtist = "스포티파이 재생 상태 확인 중..."
+        self.currentArtist = "재생 상태 확인 중..."
         
         fetchCurrentlyPlaying { title, artist, progressMs in
             guard let title = title, let artist = artist, let progressMs = progressMs else {
@@ -237,38 +282,17 @@ struct ContentView: View {
             }
             self.currentSong = title
             self.currentArtist = artist
+            self.currentSeconds = Double(progressMs) / 1000.0
             
             self.fetchLyrics(title: title, artist: artist) { lyrics in
                 self.syncedLyrics = lyrics
                 
-                let success = self.startLiveActivity(title: title, artist: artist, progressMs: progressMs)
-                guard success else { return }
-                
-                AudioKeepAlive.shared.start(until: Date().addingTimeInterval(300)) {
-                    // 타이머 종료 시 처리
-                }
-                
                 self.syncTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
-                    // 💡 [진단 추적] 타이머 돌 때마다 시스템이 실제로 위젯을 살려두고 있는지 검사
-                    let activeActivities = Activity<LyricsAttributes>.activities
-                    if activeActivities.isEmpty {
-                        DispatchQueue.main.async {
-                            self.currentArtist = "🚨 iOS 시스템이 위젯을 강제 차단함 (서명/권한 거부)"
-                        }
-                    }
-                    
                     self.fetchCurrentlyPlaying { t, a, pMs in
                         guard let pMs = pMs else { return }
                         if let t = t { self.currentSong = t }
                         if let a = a { self.currentArtist = a }
-                        
-                        let currentSeconds = Double(pMs) / 1000.0
-                        let activeLine = self.syncedLyrics.last(where: { $0.time <= currentSeconds })?.text ?? "가사 싱크 대기 중..."
-                        
-                        Task {
-                            let state = LyricsAttributes.ContentState(currentLyric: activeLine)
-                            await self.currentActivity?.update(using: state)
-                        }
+                        self.currentSeconds = Double(pMs) / 1000.0
                     }
                 }
             }
@@ -285,28 +309,20 @@ struct ContentView: View {
         
         URLSession.shared.dataTask(with: request) { data, response, error in
             if error != nil {
-                DispatchQueue.main.async { self.currentArtist = "스포티파이 통신 에러 발생" }
                 completion(nil, nil, nil)
                 return
             }
             
             if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 204 {
-                DispatchQueue.main.async { self.currentArtist = "스포티파이 재생 상태 아님 (204 No Content)" }
                 completion(nil, nil, nil)
                 return
             }
             
             guard let data = data,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                DispatchQueue.main.async { self.currentArtist = "Spotify JSON 파싱 실패" }
-                completion(nil, nil, nil)
-                return
-            }
-            
-            guard let item = json["item"] as? [String: Any],
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let item = json["item"] as? [String: Any],
                   let name = item["name"] as? String,
                   let progressMs = json["progress_ms"] as? Int else {
-                DispatchQueue.main.async { self.currentArtist = "재생 중인 트랙 없음 (광고 또는 미디어 형식 제한)" }
                 completion(nil, nil, nil)
                 return
             }
@@ -314,8 +330,6 @@ struct ContentView: View {
             let artistName: String
             if let artists = item["artists"] as? [[String: Any]], let firstArtist = artists.first?["name"] as? String {
                 artistName = firstArtist
-            } else if let show = item["show"] as? [String: Any], let showName = show["name"] as? String {
-                artistName = showName
             } else {
                 artistName = "Unknown Artist"
             }
@@ -337,7 +351,7 @@ struct ContentView: View {
                   let jsonArray = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
                   let bestMatch = jsonArray.first(where: { $0["syncedLyrics"] as? String != nil }),
                   let lrc = bestMatch["syncedLyrics"] as? String else {
-                DispatchQueue.main.async { self.currentArtist = "LRCLIB 가사를 찾을 수 없음" }
+                DispatchQueue.main.async { self.currentArtist = "가사를 찾을 수 없습니다" }
                 completion([])
                 return
             }
@@ -369,51 +383,10 @@ struct ContentView: View {
         }.resume()
     }
     
-    @discardableResult
-    func startLiveActivity(title: String, artist: String, progressMs: Int) -> Bool {
-        if !ActivityAuthorizationInfo().areActivitiesEnabled {
-            DispatchQueue.main.async {
-                self.currentArtist = "설정 -> Live Activities 권한이 꺼져있습니다."
-            }
-            return false
-        }
-        
-        if currentActivity != nil { return true }
-        let attributes = LyricsAttributes(songTitle: title, artistName: artist)
-        let state = LyricsAttributes.ContentState(currentLyric: "싱크 시작")
-        do {
-            currentActivity = try Activity.request(attributes: attributes, contentState: state, pushType: nil)
-            
-            // 💡 [진단 추적] 요청 직후 시스템에 실제 활성 활동이 등록되었는지 확인
-            let activeCount = Activity<LyricsAttributes>.activities.count
-            if activeCount == 0 {
-                DispatchQueue.main.async {
-                    self.currentArtist = "🚨 요청 직후 시스템이 위젯을 거부함 (권한/서명 불일치)"
-                }
-                return false
-            }
-            
-            DispatchQueue.main.async {
-                self.currentArtist = "위젯 생성 성공! (활성 수: \(activeCount))"
-            }
-            return true
-        } catch {
-            DispatchQueue.main.async {
-                self.currentArtist = "위젯 생성 실패: \(error.localizedDescription)"
-            }
-            return false
-        }
-    }
-    
-    func stopActivity() {
+    func stopSync() {
         syncTimer?.invalidate()
-        AudioKeepAlive.shared.stop()
-        Task {
-            await currentActivity?.end(dismissalPolicy: .immediate)
-            DispatchQueue.main.async {
-                self.currentActivity = nil
-                self.currentArtist = "위젯이 종료되었습니다."
-            }
+        DispatchQueue.main.async {
+            self.currentArtist = "동기화가 중지되었습니다"
         }
     }
 }
