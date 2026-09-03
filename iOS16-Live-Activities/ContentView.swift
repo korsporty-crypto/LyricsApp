@@ -221,29 +221,39 @@ struct ContentView: View {
         }.resume()
     }
     
+    // --- 실시간 가사 싱크 및 위젯 구동 로직 ---
     func startRealtimeSync() {
         syncTimer?.invalidate()
-        syncTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
-            fetchCurrentlyPlaying { title, artist, progressMs in
-                guard let title = title, let artist = artist, let progressMs = progressMs else {
-                    self.currentSong = "재생 중인 곡 없음"
-                    self.currentArtist = "스포티파이 앱을 확인해주세요"
-                    return
-                }
-                self.currentSong = title
-                self.currentArtist = artist
+        
+        // 1. 현재 재생 중인 곡 정보를 먼저 가져옴
+        fetchCurrentlyPlaying { title, artist, progressMs in
+            guard let title = title, let artist = artist, let progressMs = progressMs else {
+                self.currentSong = "재생 중인 곡 없음"
+                self.currentArtist = "스포티파이에서 음악을 켜주세요"
+                return
+            }
+            self.currentSong = title
+            self.currentArtist = artist
+            
+            // 2. 가사를 먼저 불러온 뒤 위젯을 시작하고 타이머를 켬
+            self.fetchLyrics(title: title, artist: artist) { lyrics in
+                self.syncedLyrics = lyrics
+                self.startLiveActivity(title: title, artist: artist, progressMs: progressMs)
                 
-                if self.syncedLyrics.isEmpty {
-                    self.fetchLyrics(title: title, artist: artist) { lyrics in
-                        self.syncedLyrics = lyrics
-                        self.startLiveActivity(title: title, artist: artist, progressMs: progressMs)
-                    }
-                } else {
-                    let currentSeconds = Double(progressMs) / 1000.0
-                    let activeLine = self.syncedLyrics.last(where: { $0.time <= currentSeconds })?.text ?? "..."
-                    Task {
-                        let state = LyricsAttributes.ContentState(currentLyric: activeLine)
-                        await self.currentActivity?.update(using: state)
+                // 3. 매초마다 재생 위치를 추적하여 잠금화면 가사를 실시간 업데이트
+                self.syncTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+                    self.fetchCurrentlyPlaying { t, a, pMs in
+                        guard let pMs = pMs else { return }
+                        if let t = t { self.currentSong = t }
+                        if let a = a { self.currentArtist = a }
+                        
+                        let currentSeconds = Double(pMs) / 1000.0
+                        let activeLine = self.syncedLyrics.last(where: { $0.time <= currentSeconds })?.text ?? "가사 싱크 대기 중..."
+                        
+                        Task {
+                            let state = LyricsAttributes.ContentState(currentLyric: activeLine)
+                            await self.currentActivity?.update(using: state)
+                        }
                     }
                 }
             }
@@ -290,14 +300,27 @@ struct ContentView: View {
             }
             var lines: [LyricLine] = []
             let rows = lrc.components(separatedBy: "\n")
-            let pattern = "\\[(\\d{2}):(\\d{2}\\.\\d{2,3})\\](.*)"
+            // 유연하고 강력한 LRC 타임스탬프 정규식 적용
+            let pattern = "\\[(\\d+):(\\d+)(?:\\.(\\d+))?\\](.*)"
             for row in rows {
                 guard let regex = try? NSRegularExpression(pattern: pattern),
                       let match = regex.firstMatch(in: row, range: NSRange(row.startIndex..., in: row)) else { continue }
-                let min = Double((row as NSString).substring(with: match.range(at: 1))) ?? 0
-                let sec = Double((row as NSString).substring(with: match.range(at: 2))) ?? 0
-                let text = (row as NSString).substring(with: match.range(at: 3)).trimmingCharacters(in: .whitespaces)
-                lines.append(LyricLine(time: (min * 60) + sec, text: text))
+                
+                let minStr = (row as NSString).substring(with: match.range(at: 1))
+                let secStr = (row as NSString).substring(with: match.range(at: 2))
+                let m = Double(minStr) ?? 0
+                var s = Double(secStr) ?? 0
+                
+                if match.range(at: 3).location != NSNotFound && match.range(at: 3).length > 0 {
+                    let fracStr = (row as NSString).substring(with: match.range(at: 3))
+                    let frac = Double("0.\(fracStr)") ?? 0
+                    s += frac
+                }
+                
+                let text = (row as NSString).substring(with: match.range(at: 4)).trimmingCharacters(in: .whitespaces)
+                if !text.isEmpty {
+                    lines.append(LyricLine(time: (m * 60) + s, text: text))
+                }
             }
             DispatchQueue.main.async { completion(lines) }
         }.resume()
