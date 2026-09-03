@@ -10,7 +10,7 @@
             <key>CFBundleTypeRole</key>
             <string>Viewer</string>
             <key>CFBundleURLName</key>
-            <string>com.korsporty.lyricsapp</string> <!-- 본인이 바꾼 고유 ID로 일치시켜주세요 -->
+            <string>com.korsporty.lyricsapp</string>
             <key>CFBundleURLSchemes</key>
             <array>
                 <string>lyricsapp</string>
@@ -27,5 +27,9 @@
         <string>remote-notification</string>
         <string>audio</string>
     </array>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>백그라운드에서 실시간 가사 싱크를 유지하기 위해 위치 권한이 필요합니다.</string>
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>백그라운드에서 실시간 가사 싱크를 유지하기 위해 위치 권한이 필요합니다.</string>
 </dict>
 </plist>
