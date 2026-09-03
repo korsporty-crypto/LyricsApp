@@ -78,6 +78,7 @@ struct ContentView: View {
                             .font(.subheadline)
                             .foregroundColor(.gray)
                             .lineLimit(1)
+                            .multilineTextAlignment(.center)
                     }
                 }
                 .padding(24)
@@ -224,11 +225,14 @@ struct ContentView: View {
     // --- 실시간 가사 싱크 및 위젯 구동 로직 ---
     func startRealtimeSync() {
         syncTimer?.invalidate()
+        self.currentArtist = "스포티파이 재생 상태 확인 중..."
         
         fetchCurrentlyPlaying { title, artist, progressMs in
             guard let title = title, let artist = artist, let progressMs = progressMs else {
-                self.currentSong = "재생 중인 곡 없음"
-                self.currentArtist = "스포티파이에서 음악을 켜주세요"
+                DispatchQueue.main.async {
+                    self.currentSong = "재생 중인 곡 없음"
+                    self.currentArtist = "Spotify에서 음악을 재생 중인지 확인하세요"
+                }
                 return
             }
             self.currentSong = title
@@ -238,7 +242,6 @@ struct ContentView: View {
                 self.syncedLyrics = lyrics
                 self.startLiveActivity(title: title, artist: artist, progressMs: progressMs)
                 
-                // 백그라운드 및 잠금 화면 싱크 유지 (5분)
                 AudioKeepAlive.shared.start(until: Date().addingTimeInterval(300)) {
                     // 타이머 종료 시 처리
                 }
@@ -270,7 +273,20 @@ struct ContentView: View {
         var request = URLRequest(url: url)
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         
-        URLSession.shared.dataTask(with: request) { data, _, _ in
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if error != nil {
+                DispatchQueue.main.async { self.currentArtist = "스포티파이 통신 에러 발생" }
+                completion(nil, nil, nil)
+                return
+            }
+            
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 204 {
+                // 204는 현재 재생 중인 곡이 없거나 플레이어가 비활성 상태일 때 반환됨
+                DispatchQueue.main.async { self.currentArtist = "스포티파이 재생 상태 아님 (204 No Content)" }
+                completion(nil, nil, nil)
+                return
+            }
+            
             guard let data = data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let item = json["item"] as? [String: Any],
@@ -278,7 +294,8 @@ struct ContentView: View {
                   let artists = item["artists"] as? [[String: Any]],
                   let artistName = artists.first?["name"] as? String,
                   let progressMs = json["progress_ms"] as? Int else {
-                DispatchQueue.main.async { completion(nil, nil, nil) }
+                DispatchQueue.main.async { self.currentArtist = "Spotify JSON 파싱 실패" }
+                completion(nil, nil, nil)
                 return
             }
             DispatchQueue.main.async { completion(name, artistName, progressMs) }
@@ -297,7 +314,8 @@ struct ContentView: View {
             guard let data = data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let lrc = json["syncedLyrics"] as? String else {
-                DispatchQueue.main.async { completion([]) }
+                DispatchQueue.main.async { self.currentArtist = "LRCLIB 가사를 찾을 수 없음" }
+                completion([])
                 return
             }
             var lines: [LyricLine] = []
@@ -340,8 +358,10 @@ struct ContentView: View {
         let state = LyricsAttributes.ContentState(currentLyric: "싱크 시작")
         do {
             currentActivity = try Activity.request(attributes: attributes, contentState: state, pushType: nil)
+            DispatchQueue.main.async {
+                self.currentArtist = "위젯 생성 성공! 잠금화면을 확인하세요."
+            }
         } catch {
-            print("위젯 에러: \(error)")
             DispatchQueue.main.async {
                 self.currentArtist = "위젯 생성 실패: \(error.localizedDescription)"
             }
@@ -351,7 +371,13 @@ struct ContentView: View {
     func stopActivity() {
         syncTimer?.invalidate()
         AudioKeepAlive.shared.stop()
-        Task { await currentActivity?.end(dismissalPolicy: .immediate) }
+        Task {
+            await currentActivity?.end(dismissalPolicy: .immediate)
+            DispatchQueue.main.async {
+                self.currentActivity = nil
+                self.currentArtist = "위젯이 종료되었습니다."
+            }
+        }
     }
 }
 
