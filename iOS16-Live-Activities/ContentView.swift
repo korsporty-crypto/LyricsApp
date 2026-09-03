@@ -241,7 +241,6 @@ struct ContentView: View {
             self.fetchLyrics(title: title, artist: artist) { lyrics in
                 self.syncedLyrics = lyrics
                 
-                // 💡 위젯 생성 실패 시 타이머를 시작하지 않고 에러 문구를 화면에 유지
                 let success = self.startLiveActivity(title: title, artist: artist, progressMs: progressMs)
                 guard success else { return }
                 
@@ -268,6 +267,7 @@ struct ContentView: View {
         }
     }
     
+    // 💡 안전한 파싱 로직 적용 (팟캐스트/일반 음악 모두 대응)
     func fetchCurrentlyPlaying(completion: @escaping (String?, String?, Int?) -> Void) {
         guard let url = URL(string: "https://api.spotify.com/v1/me/player/currently-playing") else {
             completion(nil, nil, nil)
@@ -293,13 +293,21 @@ struct ContentView: View {
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let item = json["item"] as? [String: Any],
                   let name = item["name"] as? String,
-                  let artists = item["artists"] as? [[String: Any]],
-                  let artistName = artists.first?["name"] as? String,
                   let progressMs = json["progress_ms"] as? Int else {
                 DispatchQueue.main.async { self.currentArtist = "Spotify JSON 파싱 실패" }
                 completion(nil, nil, nil)
                 return
             }
+            
+            let artistName: String
+            if let artists = item["artists"] as? [[String: Any]], let firstArtist = artists.first?["name"] as? String {
+                artistName = firstArtist
+            } else if let show = item["show"] as? [String: Any], let showName = show["name"] as? String {
+                artistName = showName
+            } else {
+                artistName = "Unknown Artist"
+            }
+            
             DispatchQueue.main.async { completion(name, artistName, progressMs) }
         }.resume()
     }
