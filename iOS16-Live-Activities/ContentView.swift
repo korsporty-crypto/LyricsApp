@@ -203,7 +203,6 @@ struct ContentView: View {
             "code_verifier": codeVerifier
         ]
         
-        // 오류 수정 완료: CharacterSet 옵셔널 에러 해결
         let bodyString = bodyParams.map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")" }
             .joined(separator: "&")
         request.httpBody = bodyString.data(using: .utf8)
@@ -238,6 +237,11 @@ struct ContentView: View {
             self.fetchLyrics(title: title, artist: artist) { lyrics in
                 self.syncedLyrics = lyrics
                 self.startLiveActivity(title: title, artist: artist, progressMs: progressMs)
+                
+                // 💡 백그라운드 및 잠금 화면에서도 싱크 타이머가 멈추지 않도록 오디오 세션 구동 (5분 유지)
+                AudioKeepAlive.shared.start(until: Date().addingTimeInterval(300)) {
+                    // 타이머 종료 시 별도 처리 필요 시 작성
+                }
                 
                 self.syncTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
                     self.fetchCurrentlyPlaying { t, a, pMs in
@@ -336,6 +340,7 @@ struct ContentView: View {
     
     func stopActivity() {
         syncTimer?.invalidate()
+        AudioKeepAlive.shared.stop() // 💡 위젯 종료 시 백그라운드 오디오 세션도 함께 해제
         Task { await currentActivity?.end(dismissalPolicy: .immediate) }
     }
 }
