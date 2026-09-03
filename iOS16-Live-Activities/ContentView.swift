@@ -1,6 +1,7 @@
 import SwiftUI
 import ActivityKit
 import AuthenticationServices
+import CommonCrypto
 
 struct LyricLine: Equatable {
     let time: TimeInterval
@@ -14,16 +15,14 @@ struct ContentView: View {
     @State private var currentArtist = "Spotify 연동을 기다리는 중..."
     @State private var syncedLyrics: [LyricLine] = []
     @State private var syncTimer: Timer?
+    @State private var codeVerifier: String = ""
     
-    // 입력해주신 Client ID 적용 완료
     let clientID = "f6798a7d1f8846cbab15fd5d641b5e97"
     let redirectURI = "lyricsapp://callback"
 
     var body: some View {
         ZStack {
-            // Musixmatch 시그니처 다크 배경
-            Color.black
-                .ignoresSafeArea()
+            Color.black.ignoresSafeArea()
             
             VStack(spacing: 24) {
                 // 상단 네비게이션 헤더
@@ -37,7 +36,6 @@ struct ContentView: View {
                         .foregroundColor(.white)
                     Spacer()
                     
-                    // 상태 뱃지
                     HStack(spacing: 6) {
                         Circle()
                             .fill(accessToken.isEmpty ? Color.gray : Color.green)
@@ -56,7 +54,7 @@ struct ContentView: View {
                 
                 Spacer()
                 
-                // 메인 플레이어 카드 (가사 미리보기 느낌)
+                // 메인 플레이어 카드
                 VStack(spacing: 16) {
                     ZStack {
                         Circle()
@@ -97,7 +95,7 @@ struct ContentView: View {
                 // 하단 인터랙티브 버튼 영역
                 VStack(spacing: 12) {
                     if accessToken.isEmpty {
-                        Button(action: loginWithSpotify) {
+                        Button(action: loginWithSpotifyPKCE) {
                             HStack(spacing: 8) {
                                 Image(systemName: "globe")
                                 Text("Spotify 계정 연동하기")
@@ -141,26 +139,86 @@ struct ContentView: View {
         }
     }
     
-    // --- 기능 로직 ---
-    func loginWithSpotify() {
-        let authURLString = "https://accounts.spotify.com/authorize?client_id=\(clientID)&response_type=token&redirect_uri=\(redirectURI.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")&scope=user-read-playback-state"
+    // --- Spotify PKCE 보안 인증 로직 ---
+    func generateRandomString(length: Int) -> String {
+        let letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+        return String((0..<length).map{ _ in letters.randomElement()! })
+    }
+    
+    func sha256(_ input: String) -> Data {
+        let inputData = Data(input.utf8)
+        var hashedData = Data(count: Int(CC_SHA256_DIGEST_LENGTH))
+        _ = hashedData.withUnsafeMutableBytes { hashedBytes in
+            inputData.withUnsafeBytes { inputBytes in
+                CC_SHA256(inputBytes.baseAddress, CC_LONG(inputData.count), hashedBytes.bindMemory(to: UInt8.self).baseAddress)
+            }
+        }
+        return hashedData
+    }
+    
+    func base64URLEncode(_ data: Data) -> String {
+        return data.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+    
+    func loginWithSpotifyPKCE() {
+        let verifier = generateRandomString(length: 64)
+        self.codeVerifier = verifier
+        let challenge = base64URLEncode(sha256(verifier))
+        
+        let encodedRedirect = redirectURI.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let authURLString = "https://accounts.spotify.com/authorize?client_id=\(clientID)&response_type=code&redirect_uri=\(encodedRedirect)&code_challenge_method=S256&code_challenge=\(challenge)&scope=user-read-playback-state"
+        
         guard let url = URL(string: authURLString) else { return }
         
         let session = ASWebAuthenticationSession(url: url, callbackURLScheme: "lyricsapp") { callbackURL, error in
             guard error == nil, let callbackURL = callbackURL else { return }
-            let fragment = callbackURL.fragment ?? ""
-            let params = fragment.components(separatedBy: "&")
-            for param in params {
-                let pair = param.components(separatedBy: "=")
-                if pair.first == "access_token", let token = pair.last {
+            
+            guard let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: true),
+                  let queryItems = components.queryItems,
+                  let code = queryItems.first(where: { $0.name == "code" })?.value else {
+                return
+            }
+            
+            self.exchangeCodeForToken(code: code)
+        }
+        session.presentationContextProvider = ÜbergangProvider.shared
+        session.start()
+    }
+    
+    func exchangeCodeForToken(code: String) {
+        guard let url = URL(string: "https://accounts.spotify.com/api/token") else { return }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        
+        let bodyParams = [
+            "client_id": clientID,
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirectURI,
+            "code_verifier": codeVerifier
+        ]
+        
+        let bodyString = bodyParams.map { "\($0.key)=\(($0.value).addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed ?? .alphanumerics) ?? "")" }
+            .joined(separator: "&")
+        request.httpBody = bodyString.data(using: .utf8)
+        
+        URLSession.shared.dataTask(with: request) { data, _, error in
+            guard let data = data, error == nil else { return }
+            
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let token = json["access_token"] as? String {
+                DispatchQueue.main.async {
                     self.accessToken = token
                     self.currentSong = "연동 성공!"
                     self.currentArtist = "스포티파이에서 음악을 재생하세요"
                 }
             }
-        }
-        session.presentationContextProvider = ÜbergangProvider.shared
-        session.start()
+        }.resume()
     }
     
     func startRealtimeSync() {
