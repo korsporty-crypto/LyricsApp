@@ -1,0 +1,36 @@
+name: iOS Unsigned Build
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Build without Code Signing
+      run: |
+        xcodebuild clean build \
+          -project iOS16-Live-Activities.xcodeproj \
+          -scheme iOS16-Live-Activities \
+          -sdk iphoneos \
+          -configuration Release \
+          CODE_SIGN_IDENTITY="" \
+          CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGNING_ALLOWED=NO \
+          CONFIGURATION_BUILD_DIR="$(pwd)/build"
+
+    - name: Package into IPA
+      run: |
+        mkdir -p Payload
+        mv build/*.app Payload/
+        zip -r app.ipa Payload
+
+    - name: Upload IPA Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: unsigned-ipa
+        path: app.ipa
