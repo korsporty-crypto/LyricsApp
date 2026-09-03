@@ -281,7 +281,6 @@ struct ContentView: View {
             }
             
             if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 204 {
-                // 204는 현재 재생 중인 곡이 없거나 플레이어가 비활성 상태일 때 반환됨
                 DispatchQueue.main.async { self.currentArtist = "스포티파이 재생 상태 아님 (204 No Content)" }
                 completion(nil, nil, nil)
                 return
@@ -302,22 +301,25 @@ struct ContentView: View {
         }.resume()
     }
     
+    // 💡 유연한 검색 API(/api/search)로 변경하여 가사 매칭 확률 대폭 향상
     func fetchLyrics(title: String, artist: String, completion: @escaping ([LyricLine]) -> Void) {
         let t = title.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         let a = artist.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        guard let url = URL(string: "https://lrclib.net/api/get?track_name=\(t)&artist_name=\(a)") else {
+        guard let url = URL(string: "https://lrclib.net/api/search?track_name=\(t)&artist_name=\(a)") else {
             completion([])
             return
         }
         
         URLSession.shared.dataTask(with: url) { data, _, _ in
             guard let data = data,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let lrc = json["syncedLyrics"] as? String else {
+                  let jsonArray = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+                  let bestMatch = jsonArray.first(where: { $0["syncedLyrics"] as? String != nil }),
+                  let lrc = bestMatch["syncedLyrics"] as? String else {
                 DispatchQueue.main.async { self.currentArtist = "LRCLIB 가사를 찾을 수 없음" }
                 completion([])
                 return
             }
+            
             var lines: [LyricLine] = []
             let rows = lrc.components(separatedBy: "\n")
             let pattern = "\\[(\\d+):(\\d+)(?:\\.(\\d+))?\\](.*)"
