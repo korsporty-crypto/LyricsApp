@@ -184,7 +184,7 @@ struct ContentView: View {
             
             self.exchangeCodeForToken(code: code)
         }
-        session.presentationContextProvider = ÜbergangProvider.shared
+        session.presentationContextProvider = TransitionProvider.shared
         session.start()
     }
     
@@ -203,7 +203,8 @@ struct ContentView: View {
             "code_verifier": codeVerifier
         ]
         
-        let bodyString = bodyParams.map { "\($0.key)=\(($0.value).addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed ?? .alphanumerics) ?? "")" }
+        // 오류 수정 완료: CharacterSet 옵셔널 에러 해결
+        let bodyString = bodyParams.map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")" }
             .joined(separator: "&")
         request.httpBody = bodyString.data(using: .utf8)
         
@@ -225,7 +226,6 @@ struct ContentView: View {
     func startRealtimeSync() {
         syncTimer?.invalidate()
         
-        // 1. 현재 재생 중인 곡 정보를 먼저 가져옴
         fetchCurrentlyPlaying { title, artist, progressMs in
             guard let title = title, let artist = artist, let progressMs = progressMs else {
                 self.currentSong = "재생 중인 곡 없음"
@@ -235,12 +235,10 @@ struct ContentView: View {
             self.currentSong = title
             self.currentArtist = artist
             
-            // 2. 가사를 먼저 불러온 뒤 위젯을 시작하고 타이머를 켬
             self.fetchLyrics(title: title, artist: artist) { lyrics in
                 self.syncedLyrics = lyrics
                 self.startLiveActivity(title: title, artist: artist, progressMs: progressMs)
                 
-                // 3. 매초마다 재생 위치를 추적하여 잠금화면 가사를 실시간 업데이트
                 self.syncTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
                     self.fetchCurrentlyPlaying { t, a, pMs in
                         guard let pMs = pMs else { return }
@@ -300,7 +298,6 @@ struct ContentView: View {
             }
             var lines: [LyricLine] = []
             let rows = lrc.components(separatedBy: "\n")
-            // 유연하고 강력한 LRC 타임스탬프 정규식 적용
             let pattern = "\\[(\\d+):(\\d+)(?:\\.(\\d+))?\\](.*)"
             for row in rows {
                 guard let regex = try? NSRegularExpression(pattern: pattern),
@@ -343,8 +340,8 @@ struct ContentView: View {
     }
 }
 
-class ÜbergangProvider: NSObject, ASWebAuthenticationPresentationContextProviding {
-    static let shared = ÜbergangProvider()
+class TransitionProvider: NSObject, ASWebAuthenticationPresentationContextProviding {
+    static let shared = TransitionProvider()
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
         return ASPresentationAnchor()
     }
