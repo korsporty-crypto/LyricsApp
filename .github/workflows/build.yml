@@ -15,7 +15,7 @@ jobs:
       run: |
         xcodebuild clean build \
           -project iOS16-Live-Activities.xcodeproj \
-          -scheme iOS16-Live-Activities \
+          -alltargets \
           -sdk iphoneos \
           -configuration Release \
           CODE_SIGN_IDENTITY="" \
@@ -27,6 +27,13 @@ jobs:
       run: |
         mkdir -p Payload
         mv build/*.app Payload/
+        
+        # 위젯 확장 파일(.appex)이 빌드된 경우 메인 앱의 PlugIns 폴더로 자동 병합
+        if ls build/*.appex 1> /dev/null 2>&1; then
+          mkdir -p Payload/*.app/PlugIns
+          mv build/*.appex Payload/*.app/PlugIns/
+        fi
+        
         zip -r app.ipa Payload
 
     - name: Upload IPA Artifact
