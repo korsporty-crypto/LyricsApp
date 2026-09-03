@@ -2,13 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>CFBundleDisplayName</key>
+    <string>Live Lyric</string>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>
             <key>CFBundleTypeRole</key>
             <string>Viewer</string>
             <key>CFBundleURLName</key>
-            <string>io.startway.iOS16-Live-Activities</string>
+            <string>com.korsporty.lyricsapp</string> <!-- 본인이 바꾼 고유 ID로 일치시켜주세요 -->
             <key>CFBundleURLSchemes</key>
             <array>
                 <string>lyricsapp</string>

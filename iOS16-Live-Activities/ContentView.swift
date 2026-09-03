@@ -30,7 +30,7 @@ struct ContentView: View {
                     Image(systemName: "music.mic")
                         .font(.title3)
                         .foregroundColor(.yellow)
-                    Text("Musixmatch Sync")
+                    Text("Live Lyric")
                         .font(.headline)
                         .bold()
                         .foregroundColor(.white)

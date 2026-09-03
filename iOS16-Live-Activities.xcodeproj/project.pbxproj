@@ -428,7 +428,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "io.startway.iOS16-Live-Activities";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.korsporty.lyricsapp";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -462,7 +462,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "io.startway.iOS16-Live-Activities";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.korsporty.lyricsapp";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -490,7 +490,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "io.startway.iOS16-Live-Activities.WidgetDemo";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.korsporty.lyricsapp.WidgetDemo";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -519,7 +519,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "io.startway.iOS16-Live-Activities.WidgetDemo";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.korsporty.lyricsapp.WidgetDemo";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
