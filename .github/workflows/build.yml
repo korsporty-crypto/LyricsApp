@@ -9,7 +9,7 @@ jobs:
   build:
     runs-on: macos-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Build without Code Signing
       run: |
@@ -30,7 +30,7 @@ jobs:
         zip -r app.ipa Payload
 
     - name: Upload IPA Artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: unsigned-ipa
         path: app.ipa
