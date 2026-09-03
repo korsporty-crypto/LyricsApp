@@ -267,7 +267,7 @@ struct ContentView: View {
         }
     }
     
-    // 💡 안전한 파싱 로직 적용 (팟캐스트/일반 음악 모두 대응)
+    // 💡 안전한 파싱 로직 적용 (item이 null이거나 없을 때 방어)
     func fetchCurrentlyPlaying(completion: @escaping (String?, String?, Int?) -> Void) {
         guard let url = URL(string: "https://api.spotify.com/v1/me/player/currently-playing") else {
             completion(nil, nil, nil)
@@ -290,11 +290,16 @@ struct ContentView: View {
             }
             
             guard let data = data,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let item = json["item"] as? [String: Any],
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                DispatchQueue.main.async { self.currentArtist = "Spotify JSON 파싱 실패" }
+                completion(nil, nil, nil)
+                return
+            }
+            
+            guard let item = json["item"] as? [String: Any],
                   let name = item["name"] as? String,
                   let progressMs = json["progress_ms"] as? Int else {
-                DispatchQueue.main.async { self.currentArtist = "Spotify JSON 파싱 실패" }
+                DispatchQueue.main.async { self.currentArtist = "재생 중인 트랙 없음 (광고 또는 미디어 형식 제한)" }
                 completion(nil, nil, nil)
                 return
             }
