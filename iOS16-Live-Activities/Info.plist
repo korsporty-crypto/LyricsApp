@@ -26,6 +26,7 @@
         <string>fetch</string>
         <string>remote-notification</string>
         <string>audio</string>
+        <string>location</string>
     </array>
     <key>NSLocationWhenInUseUsageDescription</key>
     <string>백그라운드에서 실시간 가사 싱크를 유지하기 위해 위치 권한이 필요합니다.</string>
