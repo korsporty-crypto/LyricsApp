@@ -249,6 +249,14 @@ struct ContentView: View {
                 }
                 
                 self.syncTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+                    // 💡 [진단 추적] 타이머 돌 때마다 시스템이 실제로 위젯을 살려두고 있는지 검사
+                    let activeActivities = Activity<LyricsAttributes>.activities
+                    if activeActivities.isEmpty {
+                        DispatchQueue.main.async {
+                            self.currentArtist = "🚨 iOS 시스템이 위젯을 강제 차단함 (서명/권한 거부)"
+                        }
+                    }
+                    
                     self.fetchCurrentlyPlaying { t, a, pMs in
                         guard let pMs = pMs else { return }
                         if let t = t { self.currentSong = t }
@@ -267,7 +275,6 @@ struct ContentView: View {
         }
     }
     
-    // 💡 안전한 파싱 로직 적용 (item이 null이거나 없을 때 방어)
     func fetchCurrentlyPlaying(completion: @escaping (String?, String?, Int?) -> Void) {
         guard let url = URL(string: "https://api.spotify.com/v1/me/player/currently-playing") else {
             completion(nil, nil, nil)
@@ -376,8 +383,18 @@ struct ContentView: View {
         let state = LyricsAttributes.ContentState(currentLyric: "싱크 시작")
         do {
             currentActivity = try Activity.request(attributes: attributes, contentState: state, pushType: nil)
+            
+            // 💡 [진단 추적] 요청 직후 시스템에 실제 활성 활동이 등록되었는지 확인
+            let activeCount = Activity<LyricsAttributes>.activities.count
+            if activeCount == 0 {
+                DispatchQueue.main.async {
+                    self.currentArtist = "🚨 요청 직후 시스템이 위젯을 거부함 (권한/서명 불일치)"
+                }
+                return false
+            }
+            
             DispatchQueue.main.async {
-                self.currentArtist = "위젯 생성 성공! 잠금화면을 확인하세요."
+                self.currentArtist = "위젯 생성 성공! (활성 수: \(activeCount))"
             }
             return true
         } catch {
