@@ -238,9 +238,9 @@ struct ContentView: View {
                 self.syncedLyrics = lyrics
                 self.startLiveActivity(title: title, artist: artist, progressMs: progressMs)
                 
-                // 💡 백그라운드 및 잠금 화면에서도 싱크 타이머가 멈추지 않도록 오디오 세션 구동 (5분 유지)
+                // 백그라운드 및 잠금 화면 싱크 유지 (5분)
                 AudioKeepAlive.shared.start(until: Date().addingTimeInterval(300)) {
-                    // 타이머 종료 시 별도 처리 필요 시 작성
+                    // 타이머 종료 시 처리
                 }
                 
                 self.syncTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
@@ -328,6 +328,13 @@ struct ContentView: View {
     }
     
     func startLiveActivity(title: String, artist: String, progressMs: Int) {
+        if !ActivityAuthorizationInfo().areActivitiesEnabled {
+            DispatchQueue.main.async {
+                self.currentArtist = "설정 -> Live Activities 권한이 꺼져있습니다."
+            }
+            return
+        }
+        
         if currentActivity != nil { return }
         let attributes = LyricsAttributes(songTitle: title, artistName: artist)
         let state = LyricsAttributes.ContentState(currentLyric: "싱크 시작")
@@ -335,12 +342,15 @@ struct ContentView: View {
             currentActivity = try Activity.request(attributes: attributes, contentState: state, pushType: nil)
         } catch {
             print("위젯 에러: \(error)")
+            DispatchQueue.main.async {
+                self.currentArtist = "위젯 생성 실패: \(error.localizedDescription)"
+            }
         }
     }
     
     func stopActivity() {
         syncTimer?.invalidate()
-        AudioKeepAlive.shared.stop() // 💡 위젯 종료 시 백그라운드 오디오 세션도 함께 해제
+        AudioKeepAlive.shared.stop()
         Task { await currentActivity?.end(dismissalPolicy: .immediate) }
     }
 }
