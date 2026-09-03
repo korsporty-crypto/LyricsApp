@@ -1,8 +1,7 @@
 import SwiftUI
 import ActivityKit
-import MediaPlayer
+import AuthenticationServices
 
-// 가사 줄 구조체
 struct LyricLine: Equatable {
     let time: TimeInterval
     let text: String
@@ -10,87 +9,216 @@ struct LyricLine: Equatable {
 
 struct ContentView: View {
     @State private var currentActivity: Activity<LyricsAttributes>? = nil
-    @State private var currentSongTitle = "재생 중인 음악 없음"
-    @State private var currentArtist = "스포티파이 감지 대기 중"
+    @State private var accessToken: String = ""
+    @State private var currentSong = "재생 중인 음악 없음"
+    @State private var currentArtist = "Spotify 연동을 기다리는 중..."
     @State private var syncedLyrics: [LyricLine] = []
-    @State private var playbackTimer: Timer?
-    @State private var songStartTime = Date()
+    @State private var syncTimer: Timer?
+    
+    // 입력해주신 Client ID 적용 완료
+    let clientID = "f6798a7d1f8846cbab15fd5d641b5e97"
+    let redirectURI = "lyricsapp://callback"
 
     var body: some View {
-        VStack(spacing: 25) {
-            Text("Spotify 실시간 가사 연동")
-                .font(.title2)
-                .bold()
+        ZStack {
+            // Musixmatch 시그니처 다크 배경
+            Color.black
+                .ignoresSafeArea()
             
-            VStack(spacing: 8) {
-                Text(currentSongTitle)
-                    .font(.headline)
-                Text(currentArtist)
-                    .font(.subheadline)
-                    .foregroundColor(.gray)
-            }
-            .padding()
-            .background(Color.secondary.opacity(0.1))
-            .cornerRadius(12)
-            
-            Button(action: startRealLyricsSync) {
-                Text("잠금화면 실시간 가사 시작")
-                    .foregroundColor(.white)
-                    .padding()
-                    .background(Color.green)
-                    .cornerRadius(10)
-            }
-            
-            Button(action: stopActivity) {
-                Text("가사 종료")
-                    .foregroundColor(.white)
-                    .padding()
-                    .background(Color.red)
-                    .cornerRadius(10)
+            VStack(spacing: 24) {
+                // 상단 네비게이션 헤더
+                HStack {
+                    Image(systemName: "music.mic")
+                        .font(.title3)
+                        .foregroundColor(.yellow)
+                    Text("Musixmatch Sync")
+                        .font(.headline)
+                        .bold()
+                        .foregroundColor(.white)
+                    Spacer()
+                    
+                    // 상태 뱃지
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(accessToken.isEmpty ? Color.gray : Color.green)
+                            .frame(width: 6, height: 6)
+                        Text(accessToken.isEmpty ? "OFF" : "LIVE")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(accessToken.isEmpty ? .gray : .green)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Color.white.opacity(0.1))
+                    .cornerRadius(20)
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 10)
+                
+                Spacer()
+                
+                // 메인 플레이어 카드 (가사 미리보기 느낌)
+                VStack(spacing: 16) {
+                    ZStack {
+                        Circle()
+                            .fill(LinearGradient(colors: [.yellow.opacity(0.3), .orange.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(width: 90, height: 90)
+                        Image(systemName: "waveform")
+                            .font(.system(size: 36))
+                            .foregroundColor(.yellow)
+                    }
+                    .padding(.top, 10)
+                    
+                    VStack(spacing: 6) {
+                        Text(currentSong)
+                            .font(.title2)
+                            .bold()
+                            .foregroundColor(.white)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(1)
+                        
+                        Text(currentArtist)
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                            .lineLimit(1)
+                    }
+                }
+                .padding(24)
+                .frame(maxWidth: .infinity)
+                .background(Color(.systemGray6).opacity(0.08))
+                .cornerRadius(24)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                )
+                .padding(.horizontal, 20)
+                
+                Spacer()
+                
+                // 하단 인터랙티브 버튼 영역
+                VStack(spacing: 12) {
+                    if accessToken.isEmpty {
+                        Button(action: loginWithSpotify) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "globe")
+                                Text("Spotify 계정 연동하기")
+                            }
+                            .font(.headline)
+                            .foregroundColor(.black)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(Color.yellow)
+                            .cornerRadius(16)
+                        }
+                    } else {
+                        Button(action: startRealtimeSync) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "play.circle.fill")
+                                Text("잠금화면 가사 위젯 띄우기")
+                            }
+                            .font(.headline)
+                            .foregroundColor(.black)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(Color.yellow)
+                            .cornerRadius(16)
+                        }
+                    }
+                    
+                    Button(action: stopActivity) {
+                        Text("위젯 종료하기")
+                            .font(.subheadline)
+                            .bold()
+                            .foregroundColor(.red)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Color.red.opacity(0.1))
+                            .cornerRadius(16)
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 20)
             }
         }
-        .padding()
     }
     
-    // 1. 스포티파이 등 시스템 플레이어에서 현재 곡 정보 가져오기 & 가사 다운로드
-    func startRealLyricsSync() {
-        let nowPlayingInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo
+    // --- 기능 로직 ---
+    func loginWithSpotify() {
+        let authURLString = "https://accounts.spotify.com/authorize?client_id=\(clientID)&response_type=token&redirect_uri=\(redirectURI.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")&scope=user-read-playback-state"
+        guard let url = URL(string: authURLString) else { return }
         
-        guard let title = nowPlayingInfo?[MPMediaItemPropertyTitle] as? String,
-              let artist = nowPlayingInfo?[MPMediaItemPropertyArtist] as? String else {
-            currentSongTitle = "음악을 먼저 재생해주세요!"
-            currentArtist = "스포티파이에서 곡을 틀고 눌러주세요"
+        let session = ASWebAuthenticationSession(url: url, callbackURLScheme: "lyricsapp") { callbackURL, error in
+            guard error == nil, let callbackURL = callbackURL else { return }
+            let fragment = callbackURL.fragment ?? ""
+            let params = fragment.components(separatedBy: "&")
+            for param in params {
+                let pair = param.components(separatedBy: "=")
+                if pair.first == "access_token", let token = pair.last {
+                    self.accessToken = token
+                    self.currentSong = "연동 성공!"
+                    self.currentArtist = "스포티파이에서 음악을 재생하세요"
+                }
+            }
+        }
+        session.presentationContextProvider = ÜbergangProvider.shared
+        session.start()
+    }
+    
+    func startRealtimeSync() {
+        syncTimer?.invalidate()
+        syncTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+            fetchCurrentlyPlaying { title, artist, progressMs in
+                guard let title = title, let artist = artist, let progressMs = progressMs else {
+                    self.currentSong = "재생 중인 곡 없음"
+                    self.currentArtist = "스포티파이 앱을 확인해주세요"
+                    return
+                }
+                self.currentSong = title
+                self.currentArtist = artist
+                
+                if self.syncedLyrics.isEmpty {
+                    self.fetchLyrics(title: title, artist: artist) { lyrics in
+                        self.syncedLyrics = lyrics
+                        self.startLiveActivity(title: title, artist: artist, progressMs: progressMs)
+                    }
+                } else {
+                    let currentSeconds = Double(progressMs) / 1000.0
+                    let activeLine = self.syncedLyrics.last(where: { $0.time <= currentSeconds })?.text ?? "..."
+                    Task {
+                        let state = LyricsAttributes.ContentState(currentLyric: activeLine)
+                        await self.currentActivity?.update(using: state)
+                    }
+                }
+            }
+        }
+    }
+    
+    func fetchCurrentlyPlaying(completion: @escaping (String?, String?, Int?) -> Void) {
+        guard let url = URL(string: "https://api.spotify.com/v1/me/player/currently-playing") else {
+            completion(nil, nil, nil)
             return
         }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         
-        currentSongTitle = title
-        currentArtist = artist
-        songStartTime = Date() // 재생 시작 시점 기록
-        
-        // LRCLIB 무료 API를 통해 실시간 가사(LRC) 조회
-        fetchLyricsFromLRCLIB(title: title, artist: artist) { lyrics in
-            self.syncedLyrics = lyrics
-            
-            // Live Activities 위젯 시작
-            let attributes = LyricsAttributes(songTitle: title, artistName: artist)
-            let initialState = LyricsAttributes.ContentState(currentLyric: "가사 싱크 준비 중...")
-            
-            do {
-                self.currentActivity = try Activity.request(attributes: attributes, contentState: initialState, pushType: nil)
-                self.startSyncTimer()
-            } catch {
-                print("위젯 시작 오류: \(error)")
+        URLSession.shared.dataTask(with: request) { data, _, _ in
+            guard let data = data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let item = json["item"] as? [String: Any],
+                  let name = item["name"] as? String,
+                  let artists = item["artists"] as? [[String: Any]],
+                  let artistName = artists.first?["name"] as? String,
+                  let progressMs = json["progress_ms"] as? Int else {
+                DispatchQueue.main.async { completion(nil, nil, nil) }
+                return
             }
-        }
+            DispatchQueue.main.async { completion(name, artistName, progressMs) }
+        }.resume()
     }
     
-    // 2. 무료 오픈소스 가사 서버(LRCLIB)에서 LRC 데이터 받아오기
-    func fetchLyricsFromLRCLIB(title: String, artist: String, completion: @escaping ([LyricLine]) -> Void) {
-        let encodedTitle = title.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        let encodedArtist = artist.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        
-        let urlString = "https://lrclib.net/api/get?track_name=\(encodedTitle)&artist_name=\(encodedArtist)"
-        guard let url = URL(string: urlString) else {
+    func fetchLyrics(title: String, artist: String, completion: @escaping ([LyricLine]) -> Void) {
+        let t = title.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let a = artist.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        guard let url = URL(string: "https://lrclib.net/api/get?track_name=\(t)&artist_name=\(a)") else {
             completion([])
             return
         }
@@ -98,58 +226,45 @@ struct ContentView: View {
         URLSession.shared.dataTask(with: url) { data, _, _ in
             guard let data = data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let syncedLyricsString = json["syncedLyrics"] as? String else {
+                  let lrc = json["syncedLyrics"] as? String else {
                 DispatchQueue.main.async { completion([]) }
                 return
             }
-            
-            // LRC 형식 파싱
-            let parsed = parseLRC(syncedLyricsString)
-            DispatchQueue.main.async { completion(parsed) }
+            var lines: [LyricLine] = []
+            let rows = lrc.components(separatedBy: "\n")
+            let pattern = "\\[(\\d{2}):(\\d{2}\\.\\d{2,3})\\](.*)"
+            for row in rows {
+                guard let regex = try? NSRegularExpression(pattern: pattern),
+                      let match = regex.firstMatch(in: row, range: NSRange(row.startIndex..., in: row)) else { continue }
+                let min = Double((row as NSString).substring(with: match.range(at: 1))) ?? 0
+                let sec = Double((row as NSString).substring(with: match.range(at: 2))) ?? 0
+                let text = (row as NSString).substring(with: match.range(at: 3)).trimmingCharacters(in: .whitespaces)
+                lines.append(LyricLine(time: (min * 60) + sec, text: text))
+            }
+            DispatchQueue.main.async { completion(lines) }
         }.resume()
     }
     
-    // LRC 텍스트 파서 함수
-    func parseLRC(_ lrc: String) -> [LyricLine] {
-        var lines: [LyricLine] = []
-        let rows = lrc.components(separatedBy: "\n")
-        let pattern = "\\[(\\d{2}):(\\d{2}\\.\\d{2,3})\\](.*)"
-        
-        for row in rows {
-            guard let regex = try? NSRegularExpression(pattern: pattern),
-                  let match = regex.firstMatch(in: row, range: NSRange(row.startIndex..., in: row)) else { continue }
-            
-            let minStr = (row as NSString).substring(with: match.range(at: 1))
-            let secStr = (row as NSString).substring(with: match.range(at: 2))
-            let text = (row as NSString).substring(with: match.range(at: 3)).trimmingCharacters(in: .whitespaces)
-            
-            if let min = Double(minStr), let sec = Double(secStr) {
-                lines.append(LyricLine(time: (min * 60) + sec, text: text))
-            }
-        }
-        return lines
-    }
-    
-    // 3. 실제 재생 시간과 가사 타임스탬프를 매칭하여 위젯 갱신
-    func startSyncTimer() {
-        playbackTimer?.invalidate()
-        playbackTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
-            let elapsedTime = Date().timeIntervalSince(songStartTime)
-            
-            // 현재 시간에 맞는 가사 라인 찾기
-            let activeLine = syncedLyrics.last(where: { $0.time <= elapsedTime })?.text ?? "가사 대기 중..."
-            
-            Task {
-                let updatedState = LyricsAttributes.ContentState(currentLyric: activeLine)
-                await currentActivity?.update(using: updatedState)
-            }
+    func startLiveActivity(title: String, artist: String, progressMs: Int) {
+        if currentActivity != nil { return }
+        let attributes = LyricsAttributes(songTitle: title, artistName: artist)
+        let state = LyricsAttributes.ContentState(currentLyric: "싱크 시작")
+        do {
+            currentActivity = try Activity.request(attributes: attributes, contentState: state, pushType: nil)
+        } catch {
+            print("위젯 에러: \(error)")
         }
     }
     
     func stopActivity() {
-        playbackTimer?.invalidate()
-        Task {
-            await currentActivity?.end(dismissalPolicy: .immediate)
-        }
+        syncTimer?.invalidate()
+        Task { await currentActivity?.end(dismissalPolicy: .immediate) }
+    }
+}
+
+class ÜbergangProvider: NSObject, ASWebAuthenticationPresentationContextProviding {
+    static let shared = ÜbergangProvider()
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        return ASPresentationAnchor()
     }
 }
