@@ -240,7 +240,10 @@ struct ContentView: View {
             
             self.fetchLyrics(title: title, artist: artist) { lyrics in
                 self.syncedLyrics = lyrics
-                self.startLiveActivity(title: title, artist: artist, progressMs: progressMs)
+                
+                // 💡 위젯 생성 실패 시 타이머를 시작하지 않고 에러 문구를 화면에 유지
+                let success = self.startLiveActivity(title: title, artist: artist, progressMs: progressMs)
+                guard success else { return }
                 
                 AudioKeepAlive.shared.start(until: Date().addingTimeInterval(300)) {
                     // 타이머 종료 시 처리
@@ -301,7 +304,6 @@ struct ContentView: View {
         }.resume()
     }
     
-    // 💡 유연한 검색 API(/api/search)로 변경하여 가사 매칭 확률 대폭 향상
     func fetchLyrics(title: String, artist: String, completion: @escaping ([LyricLine]) -> Void) {
         let t = title.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         let a = artist.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
@@ -347,15 +349,16 @@ struct ContentView: View {
         }.resume()
     }
     
-    func startLiveActivity(title: String, artist: String, progressMs: Int) {
+    @discardableResult
+    func startLiveActivity(title: String, artist: String, progressMs: Int) -> Bool {
         if !ActivityAuthorizationInfo().areActivitiesEnabled {
             DispatchQueue.main.async {
                 self.currentArtist = "설정 -> Live Activities 권한이 꺼져있습니다."
             }
-            return
+            return false
         }
         
-        if currentActivity != nil { return }
+        if currentActivity != nil { return true }
         let attributes = LyricsAttributes(songTitle: title, artistName: artist)
         let state = LyricsAttributes.ContentState(currentLyric: "싱크 시작")
         do {
@@ -363,10 +366,12 @@ struct ContentView: View {
             DispatchQueue.main.async {
                 self.currentArtist = "위젯 생성 성공! 잠금화면을 확인하세요."
             }
+            return true
         } catch {
             DispatchQueue.main.async {
                 self.currentArtist = "위젯 생성 실패: \(error.localizedDescription)"
             }
+            return false
         }
     }
     
